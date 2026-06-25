@@ -17,6 +17,21 @@ try {
 } catch (err) {
   console.error("[Obsidian Bridge] Failed to expose contextBridge:", err);
 }
+try {
+  import_electron.contextBridge.exposeInMainWorld("ElectronIPC", {
+    send: (channel, payload) => {
+      try {
+        const sanitized = JSON.parse(JSON.stringify(payload));
+        import_electron.ipcRenderer.sendToHost(channel, sanitized);
+      } catch (e) {
+        console.error("[ElectronIPC] Serialization failed:", e);
+        throw e;
+      }
+    }
+  });
+} catch (err) {
+  console.error("[ElectronIPC] Failed to expose contextBridge:", err);
+}
 var injectMainWorldMonkeypatch = () => {
   const patchScript = `
         (function() {

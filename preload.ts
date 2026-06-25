@@ -20,6 +20,22 @@ try {
 } catch (err) {
     console.error('[Obsidian Bridge] Failed to expose contextBridge:', err);
 }
+
+try {
+    contextBridge.exposeInMainWorld('ElectronIPC', {
+        send: (channel: string, payload: any) => {
+            try {
+                const sanitized = JSON.parse(JSON.stringify(payload));
+                ipcRenderer.sendToHost(channel, sanitized);
+            } catch (e) {
+                console.error('[ElectronIPC] Serialization failed:', e);
+                throw e;
+            }
+        }
+    });
+} catch (err) {
+    console.error('[ElectronIPC] Failed to expose contextBridge:', err);
+}
 //#endregion
 
 //#region Main World Monkeypatch

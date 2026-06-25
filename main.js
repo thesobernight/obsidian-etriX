@@ -39,22 +39,43 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var path = __toESM(require("path"));
-var http = __toESM(require("http"));
 var VIEW_TYPE_COCKPIT = "trader-cockpit-view";
 var VIEW_TYPE_CHART = "trader-chart-view";
 var DEFAULT_SETTINGS = {
-  webuiUrl: "http://localhost:5173",
+  webuiUrl: "https://app.etrix.pro",
   tradingViewUrl: "https://www.tradingview.com/chart/",
   partition: "persist:trader-cockpit",
   webhookToken: "",
-  fastapiServerUrl: "http://127.0.0.1:8001",
-  jwtToken: ""
+  fastapiServerUrl: "https://app.etrix.pro",
+  jwtToken: "",
+  defaultExportPath: "Trading Journals",
+  autoSyncInterval: "off",
+  enableSignalInterceptor: true,
+  serverMode: "default",
+  tradingViewMode: "default"
 };
+function configureSandboxedWebview(webview, src, partition, preloadUrl) {
+  webview.className = "trader-cockpit-webview";
+  webview.setAttribute("src", src);
+  webview.setAttribute("partition", partition);
+  webview.setAttribute("allowpopups", "");
+  webview.setAttribute("nodeintegration", "false");
+  webview.setAttribute("contextisolation", "true");
+  webview.setAttribute("webpreferences", "contextIsolation=true, nodeIntegration=false");
+  if (preloadUrl) {
+    webview.setAttribute("preload", preloadUrl);
+  }
+}
 var CockpitView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.webviewEl = null;
     this.plugin = plugin;
+    this.addAction("refresh-cw", "Reload Page", () => {
+      if (this.webviewEl) {
+        this.webviewEl.reload();
+      }
+    });
   }
   getViewType() {
     return VIEW_TYPE_COCKPIT;
@@ -74,11 +95,7 @@ var CockpitView = class extends import_obsidian.ItemView {
     }
     const viewContainer = container.createEl("div", { cls: "trader-cockpit-container" });
     const webview = document.createElement("webview");
-    webview.className = "trader-cockpit-webview";
-    webview.setAttribute("src", this.plugin.settings.webuiUrl);
-    webview.setAttribute("partition", this.plugin.settings.partition);
-    webview.setAttribute("allowpopups", "");
-    webview.setAttribute("webpreferences", "contextIsolation=true, nodeIntegration=false");
+    configureSandboxedWebview(webview, this.plugin.settings.webuiUrl, this.plugin.settings.partition);
     const adapter = this.app.vault.adapter;
     if (adapter instanceof import_obsidian.FileSystemAdapter) {
       const pluginDir = `${this.app.vault.configDir}/plugins/obsidian-trader-cockpit`;
@@ -87,12 +104,22 @@ var CockpitView = class extends import_obsidian.ItemView {
       const preloadUrl = "file://" + (process.platform === "win32" ? preloadFilePath.replace(/\\/g, "/") : preloadFilePath);
       webview.setAttribute("preload", preloadUrl);
     }
-    webview.addEventListener("ipc-message", (event) => {
+    webview.addEventListener("ipc-message", async (event) => {
       const { channel, args } = event;
       if (channel === "trade-execution") {
         this.plugin.handleTradeExecution(args[0]);
       } else if (channel === "telemetry-event") {
         this.plugin.handleTelemetry(args[0]);
+      } else if (channel === "write-note") {
+        try {
+          const { file_path, content, overwrite, frontmatter, is_binary, attachments } = args[0];
+          await this.plugin.writeNoteToVault(file_path, content, overwrite, frontmatter, is_binary, attachments);
+          new import_obsidian.Notice(`Successfully saved note: ${file_path}`);
+        } catch (err) {
+          new import_obsidian.Notice(`Failed to save note: ${err.message}`);
+        }
+      } else if (channel === "open-chart-view") {
+        this.plugin.activateView(VIEW_TYPE_CHART);
       }
     });
     this.webviewEl = webview;
@@ -109,6 +136,11 @@ var ChartView = class extends import_obsidian.ItemView {
     super(leaf);
     this.webviewEl = null;
     this.plugin = plugin;
+    this.addAction("refresh-cw", "Reload Page", () => {
+      if (this.webviewEl) {
+        this.webviewEl.reload();
+      }
+    });
   }
   getViewType() {
     return VIEW_TYPE_CHART;
@@ -128,25 +160,31 @@ var ChartView = class extends import_obsidian.ItemView {
     }
     const viewContainer = container.createEl("div", { cls: "trader-cockpit-container" });
     const webview = document.createElement("webview");
-    webview.className = "trader-cockpit-webview";
-    webview.setAttribute("src", this.plugin.settings.tradingViewUrl);
-    webview.setAttribute("partition", this.plugin.settings.partition);
-    webview.setAttribute("allowpopups", "");
-    webview.setAttribute("webpreferences", "contextIsolation=true, nodeIntegration=false");
+    configureSandboxedWebview(webview, this.plugin.settings.tradingViewUrl, this.plugin.settings.partition);
     const adapter = this.app.vault.adapter;
-    if (adapter instanceof import_obsidian.FileSystemAdapter) {
+    if (adapter instanceof import_obsidian.FileSystemAdapter && this.plugin.settings.enableSignalInterceptor) {
       const pluginDir = `${this.app.vault.configDir}/plugins/obsidian-trader-cockpit`;
       const absolutePluginDir = adapter.getFullPath(pluginDir);
       const preloadFilePath = path.join(absolutePluginDir, "preload.js");
       const preloadUrl = "file://" + (process.platform === "win32" ? preloadFilePath.replace(/\\/g, "/") : preloadFilePath);
       webview.setAttribute("preload", preloadUrl);
     }
-    webview.addEventListener("ipc-message", (event) => {
+    webview.addEventListener("ipc-message", async (event) => {
       const { channel, args } = event;
       if (channel === "trade-execution") {
         this.plugin.handleTradeExecution(args[0]);
       } else if (channel === "telemetry-event") {
         this.plugin.handleTelemetry(args[0]);
+      } else if (channel === "write-note") {
+        try {
+          const { file_path, content, overwrite, frontmatter, is_binary, attachments } = args[0];
+          await this.plugin.writeNoteToVault(file_path, content, overwrite, frontmatter, is_binary, attachments);
+          new import_obsidian.Notice(`Successfully saved note: ${file_path}`);
+        } catch (err) {
+          new import_obsidian.Notice(`Failed to save note: ${err.message}`);
+        }
+      } else if (channel === "open-chart-view") {
+        this.plugin.activateView(VIEW_TYPE_CHART);
       }
     });
     this.webviewEl = webview;
@@ -161,11 +199,10 @@ var ChartView = class extends import_obsidian.ItemView {
 var TraderCockpitPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.receiverServer = null;
+    this.syncTimer = null;
   }
   async onload() {
     await this.loadSettings();
-    this.startReceiverServer();
     this.registerView(
       VIEW_TYPE_COCKPIT,
       (leaf) => new CockpitView(leaf, this)
@@ -195,66 +232,158 @@ var TraderCockpitPlugin = class extends import_obsidian.Plugin {
       name: "Sync Vault Journals",
       callback: () => this.syncVaultJournals()
     });
+    this.app.workspace.onLayoutReady(() => {
+      if (this.settings.autoSyncInterval === "startup") {
+        this.syncVaultJournals();
+      }
+      this.setupAutoSync();
+    });
     this.addSettingTab(new TraderCockpitSettingTab(this.app, this));
   }
   async onunload() {
-    this.stopReceiverServer();
-  }
-  startReceiverServer() {
-    const port = 27182;
-    this.receiverServer = http.createServer((req, res) => {
-      if (req.method === "POST" && req.url === "/signal") {
-        let body = "";
-        req.on("data", (chunk) => {
-          body += chunk;
-        });
-        req.on("end", async () => {
-          try {
-            const signalPayload = JSON.parse(body);
-            await this.forwardSignalToBackend(signalPayload);
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ status: "success", message: "Signal forwarded" }));
-          } catch (err) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ status: "error", detail: err.message }));
-          }
-        });
-      } else {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "error", detail: "Not Found" }));
-      }
-    });
-    this.receiverServer.on("error", (err) => {
-      console.error("[Trader Cockpit] Receiver server error:", err);
-      if (err.code === "EADDRINUSE") {
-        new import_obsidian.Notice("Trader Cockpit: Port 27182 is already in use. Local webhook bridge disabled.");
-      }
-    });
-    this.receiverServer.listen(port, "127.0.0.1", () => {
-      console.log(`[Trader Cockpit] Embedded Receiver server listening on 127.0.0.1:${port}`);
-    });
-  }
-  stopReceiverServer() {
-    if (this.receiverServer) {
-      this.receiverServer.close();
-      this.receiverServer = null;
-      console.log("[Trader Cockpit] Embedded Receiver server stopped.");
+    if (this.syncTimer) {
+      window.clearInterval(this.syncTimer);
+      this.syncTimer = null;
     }
   }
-  async forwardSignalToBackend(payload) {
-    const url = `${this.settings.fastapiServerUrl}/api/webhook/signal`;
-    const headers = {
-      "Content-Type": "application/json",
-      "X-Webhook-Token": this.settings.webhookToken
+  setupAutoSync() {
+    if (this.syncTimer) {
+      window.clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
+    const interval = this.settings.autoSyncInterval;
+    if (interval === "1h") {
+      this.syncTimer = window.setInterval(() => this.syncVaultJournals(), 60 * 60 * 1e3);
+    } else if (interval === "1d") {
+      this.syncTimer = window.setInterval(() => this.syncVaultJournals(), 24 * 60 * 60 * 1e3);
+    }
+  }
+  async writeNoteToVault(filePath, content, overwrite = true, frontmatter, isBinary, attachments) {
+    if (filePath.includes("..") || path.isAbsolute(filePath)) {
+      throw new Error("Invalid path: traversal or absolute paths not allowed");
+    }
+    let finalPath = filePath;
+    const defaultPath = this.settings.defaultExportPath;
+    if (defaultPath && !filePath.startsWith("/") && !filePath.startsWith(defaultPath)) {
+      finalPath = path.join(defaultPath, filePath);
+    }
+    const existingFile = this.app.vault.getAbstractFileByPath(finalPath);
+    if (existingFile && !overwrite) {
+      throw new Error("File already exists");
+    }
+    const dirName = path.dirname(finalPath);
+    if (dirName && dirName !== "." && dirName !== "/") {
+      const parts = dirName.split(/[/\\]/);
+      let currentPath = "";
+      for (const part of parts) {
+        if (!part)
+          continue;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (!await this.app.vault.adapter.exists(currentPath)) {
+          await this.app.vault.createFolder(currentPath);
+        }
+      }
+    }
+    const toYAML = (obj, indent = 0) => {
+      if (obj === null || obj === void 0) {
+        return "null";
+      }
+      if (typeof obj === "string") {
+        return `"${obj.replace(/"/g, '\\"')}"`;
+      }
+      if (typeof obj === "number" || typeof obj === "boolean") {
+        return String(obj);
+      }
+      if (Array.isArray(obj)) {
+        if (obj.length === 0)
+          return " []";
+        let resVal = "";
+        for (const item of obj) {
+          if (typeof item === "object" && item !== null) {
+            const keys = Object.keys(item);
+            if (keys.length === 0) {
+              resVal += `
+${" ".repeat(indent)}- {}`;
+              continue;
+            }
+            const firstKey = keys[0];
+            const firstVal = item[firstKey];
+            resVal += `
+${" ".repeat(indent)}- ${firstKey}: ${toYAML(firstVal, 0)}`;
+            for (let i = 1; i < keys.length; i++) {
+              const k = keys[i];
+              const v = item[k];
+              if (typeof v === "object" && v !== null) {
+                resVal += `
+${" ".repeat(indent + 2)}${k}:${toYAML(v, indent + 4)}`;
+              } else {
+                resVal += `
+${" ".repeat(indent + 2)}${k}: ${toYAML(v, 0)}`;
+              }
+            }
+          } else {
+            resVal += `
+${" ".repeat(indent)}- ${toYAML(item, 0)}`;
+          }
+        }
+        return resVal;
+      }
+      if (typeof obj === "object") {
+        const keys = Object.keys(obj);
+        if (keys.length === 0)
+          return " {}";
+        let resVal = "";
+        for (const key of keys) {
+          const val = obj[key];
+          if (Array.isArray(val)) {
+            resVal += `
+${" ".repeat(indent)}${key}:`;
+            resVal += toYAML(val, indent + 2);
+          } else if (typeof val === "object" && val !== null) {
+            resVal += `
+${" ".repeat(indent)}${key}:`;
+            resVal += toYAML(val, indent + 2);
+          } else {
+            resVal += `
+${" ".repeat(indent)}${key}: ${toYAML(val, 0)}`;
+          }
+        }
+        return resVal;
+      }
+      return "";
     };
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`FastAPI rejection: ${response.status} - ${errBody}`);
+    if (isBinary) {
+      const binaryData = Buffer.from(content, "base64");
+      await this.app.vault.adapter.writeBinary(finalPath, binaryData);
+    } else {
+      let textData = "";
+      if (frontmatter && typeof frontmatter === "object" && Object.keys(frontmatter).length > 0) {
+        textData += "---\n";
+        textData += toYAML(frontmatter, 0).trim();
+        textData += "\n---\n";
+      }
+      textData += content || "";
+      const existingFile2 = this.app.vault.getAbstractFileByPath(finalPath);
+      if (existingFile2 && existingFile2 instanceof import_obsidian.TFile) {
+        await this.app.vault.modify(existingFile2, textData);
+      } else {
+        await this.app.vault.create(finalPath, textData);
+      }
+    }
+    if (attachments && attachments.length > 0) {
+      if (!await this.app.vault.adapter.exists("attachments")) {
+        await this.app.vault.createFolder("attachments");
+      }
+      for (const att of attachments) {
+        if (att.fileName && att.base64Data) {
+          if (att.fileName.includes("..") || path.isAbsolute(att.fileName)) {
+            continue;
+          }
+          const attPath = `attachments/${att.fileName}`;
+          const binaryData = Buffer.from(att.base64Data, "base64");
+          await this.app.vault.adapter.writeBinary(attPath, binaryData);
+        }
+      }
     }
   }
   getJwtToken() {
@@ -353,29 +482,48 @@ var TraderCockpitSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Trader Cockpit Settings" });
-    new import_obsidian.Setting(containerEl).setName("WebUI URL").setDesc("The URL of the local or remote React Cockpit WebUI.").addText((text) => text.setPlaceholder("http://localhost:5173").setValue(this.plugin.settings.webuiUrl).onChange(async (value) => {
-      this.plugin.settings.webuiUrl = value;
+    new import_obsidian.Setting(containerEl).setName("Server Mode").setDesc("Connect to the official Etrix server, or enter a custom self-hosted URL.").addDropdown((dropdown) => dropdown.addOption("default", "Default (app.etrix.pro)").addOption("custom", "Custom (Self-Hosted)").setValue(this.plugin.settings.serverMode || "default").onChange(async (value) => {
+      this.plugin.settings.serverMode = value;
+      if (value === "default") {
+        this.plugin.settings.webuiUrl = "https://app.etrix.pro";
+        this.plugin.settings.fastapiServerUrl = "https://app.etrix.pro";
+      }
+      await this.plugin.saveSettings();
+      this.display();
+    }));
+    if (this.plugin.settings.serverMode === "custom") {
+      new import_obsidian.Setting(containerEl).setName("Custom Server URL").setDesc("Full URL of your self-hosted server (e.g. http://192.168.1.100:8002).").addText((text) => text.setPlaceholder("https://your-server.com").setValue(this.plugin.settings.webuiUrl).onChange(async (value) => {
+        this.plugin.settings.webuiUrl = value.trim();
+        this.plugin.settings.fastapiServerUrl = value.trim();
+        await this.plugin.saveSettings();
+      }));
+    }
+    new import_obsidian.Setting(containerEl).setName("Default Export Path").setDesc("The default folder in the vault to save Markdown journals.").addText((text) => text.setPlaceholder("Trading Journals").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
+      this.plugin.settings.defaultExportPath = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("TradingView Chart URL").setDesc("The URL of the TradingView chart to load and intercept.").addText((text) => text.setPlaceholder("https://www.tradingview.com/chart/").setValue(this.plugin.settings.tradingViewUrl).onChange(async (value) => {
-      this.plugin.settings.tradingViewUrl = value;
+    new import_obsidian.Setting(containerEl).setName("Auto-Sync Vault Journals").setDesc("Configure automatic synchronization of trade journals to the server.").addDropdown((dropdown) => dropdown.addOption("off", "Disabled").addOption("startup", "On Startup").addOption("1h", "Every 1 Hour").addOption("1d", "Every Day").setValue(this.plugin.settings.autoSyncInterval).onChange(async (value) => {
+      this.plugin.settings.autoSyncInterval = value;
+      await this.plugin.saveSettings();
+      this.plugin.setupAutoSync();
+    }));
+    new import_obsidian.Setting(containerEl).setName("TradingView Signal Interceptor").setDesc("Inject preload script to monitor and capture trade execution signals from TradingView charts.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableSignalInterceptor).onChange(async (value) => {
+      this.plugin.settings.enableSignalInterceptor = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("WebView Partition").setDesc("Electron session partition for persisting user logins, cookies, and local storage.").addText((text) => text.setPlaceholder("persist:trader-cockpit").setValue(this.plugin.settings.partition).onChange(async (value) => {
-      this.plugin.settings.partition = value;
+    new import_obsidian.Setting(containerEl).setName("TradingView Chart URL").setDesc("The chart page to load when opening the TradingView tab.").addDropdown((dropdown) => dropdown.addOption("default", "TradingView (Default Chart)").addOption("custom", "Custom URL").setValue(this.plugin.settings.tradingViewMode || "default").onChange(async (value) => {
+      this.plugin.settings.tradingViewMode = value;
+      if (value === "default") {
+        this.plugin.settings.tradingViewUrl = "https://www.tradingview.com/chart/";
+      }
       await this.plugin.saveSettings();
+      this.display();
     }));
-    new import_obsidian.Setting(containerEl).setName("FastAPI Server URL").setDesc("Local FastAPI backend URL (e.g. http://127.0.0.1:8001).").addText((text) => text.setPlaceholder("http://127.0.0.1:8001").setValue(this.plugin.settings.fastapiServerUrl).onChange(async (value) => {
-      this.plugin.settings.fastapiServerUrl = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Webhook Token").setDesc("User-specific webhook token for authenticating TradingView alert forwarding.").addText((text) => text.setPlaceholder("Enter X-Webhook-Token").setValue(this.plugin.settings.webhookToken).onChange(async (value) => {
-      this.plugin.settings.webhookToken = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("JWT Bearer Token").setDesc("JWT access token used for synchronizing Markdown trade journals.").addText((text) => text.setPlaceholder("Enter JWT access token").setValue(this.plugin.settings.jwtToken).onChange(async (value) => {
-      this.plugin.settings.jwtToken = value;
-      await this.plugin.saveSettings();
-    }));
+    if (this.plugin.settings.tradingViewMode === "custom") {
+      new import_obsidian.Setting(containerEl).setName("Custom Chart URL").setDesc("Enter a specific TradingView chart permalink or any compatible URL.").addText((text) => text.setPlaceholder("https://www.tradingview.com/chart/XXXXXX/").setValue(this.plugin.settings.tradingViewUrl).onChange(async (value) => {
+        this.plugin.settings.tradingViewUrl = value.trim();
+        await this.plugin.saveSettings();
+      }));
+    }
   }
 };
