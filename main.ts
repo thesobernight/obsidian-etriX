@@ -69,7 +69,7 @@ export class CockpitView extends ItemView {
         this.plugin = plugin;
         this.addAction('refresh-cw', 'Reload Page', () => {
             if (this.webviewEl) {
-                (this.webviewEl as any).reload();
+                (this.webviewEl as any).reloadIgnoringCache();
             }
         });
     }
@@ -153,7 +153,7 @@ export class ChartView extends ItemView {
         this.plugin = plugin;
         this.addAction('refresh-cw', 'Reload Page', () => {
             if (this.webviewEl) {
-                (this.webviewEl as any).reload();
+                (this.webviewEl as any).reloadIgnoringCache();
             }
         });
     }

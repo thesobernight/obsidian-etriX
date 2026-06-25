@@ -73,7 +73,7 @@ var CockpitView = class extends import_obsidian.ItemView {
     this.plugin = plugin;
     this.addAction("refresh-cw", "Reload Page", () => {
       if (this.webviewEl) {
-        this.webviewEl.reload();
+        this.webviewEl.reloadIgnoringCache();
       }
     });
   }
@@ -138,7 +138,7 @@ var ChartView = class extends import_obsidian.ItemView {
     this.plugin = plugin;
     this.addAction("refresh-cw", "Reload Page", () => {
       if (this.webviewEl) {
-        this.webviewEl.reload();
+        this.webviewEl.reloadIgnoringCache();
       }
     });
   }
