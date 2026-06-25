@@ -655,6 +655,37 @@ class TraderCockpitSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
         }
+
+        // Cache and Troubleshooting
+        new Setting(containerEl)
+            .setName('Clear Cache & Reload')
+            .setDesc('Force the active Cockpit View webview to reload and ignore cache (useful after syncing new versions).')
+            .addButton(cb => cb
+                .setButtonText('Force Reload Cockpit')
+                .setClass('mod-warning')
+                .onClick(async () => {
+                    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_COCKPIT);
+                    if (leaves.length > 0) {
+                        let reloaded = false;
+                        for (const leaf of leaves) {
+                            const view = leaf.view;
+                            if (view instanceof CockpitView) {
+                                const webview = (view as any).webviewEl;
+                                if (webview) {
+                                    webview.reloadIgnoringCache();
+                                    reloaded = true;
+                                }
+                            }
+                        }
+                        if (reloaded) {
+                            new Notice('Trader Cockpit webview reload triggered (ignoring cache).');
+                        } else {
+                            new Notice('Trader Cockpit is open but webview elements are not initialized yet.');
+                        }
+                    } else {
+                        new Notice('Trader Cockpit view is not currently open. Please open it first.');
+                    }
+                }));
     }
 }
 //#endregion

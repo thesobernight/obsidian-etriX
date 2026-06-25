@@ -525,5 +525,28 @@ var TraderCockpitSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       }));
     }
+    new import_obsidian.Setting(containerEl).setName("Clear Cache & Reload").setDesc("Force the active Cockpit View webview to reload and ignore cache (useful after syncing new versions).").addButton((cb) => cb.setButtonText("Force Reload Cockpit").setClass("mod-warning").onClick(async () => {
+      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_COCKPIT);
+      if (leaves.length > 0) {
+        let reloaded = false;
+        for (const leaf of leaves) {
+          const view = leaf.view;
+          if (view instanceof CockpitView) {
+            const webview = view.webviewEl;
+            if (webview) {
+              webview.reloadIgnoringCache();
+              reloaded = true;
+            }
+          }
+        }
+        if (reloaded) {
+          new import_obsidian.Notice("Trader Cockpit webview reload triggered (ignoring cache).");
+        } else {
+          new import_obsidian.Notice("Trader Cockpit is open but webview elements are not initialized yet.");
+        }
+      } else {
+        new import_obsidian.Notice("Trader Cockpit view is not currently open. Please open it first.");
+      }
+    }));
   }
 };
