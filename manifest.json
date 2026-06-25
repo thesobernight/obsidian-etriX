@@ -1,7 +1,7 @@
 {
   "id": "obsidian-trader-cockpit",
   "name": "Trader Cockpit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.0.0",
   "description": "Trader Cockpit plugin for Obsidian. Provides React WebUI Integration and TradingView worker interception capabilities.",
   "author": "SoberNight",
